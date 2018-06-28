@@ -1,0 +1,143 @@
+set hive.cli.print.current.db=true //在hive cli会显示当前的database名
+use dbs//切换数据库
+show tables;//显示该数据库中所有的表
+drop table if exists dbs;//删除数据库
+
+alter database dbs set dbproperties('editor-by'='joe dba'); //修改数据库 为其设置数据库属性
+
+create tablse if not exists tab1 (id int,name string,subordinates array<string>,deductions Map<String,Float>)
+row format delimited
+fields terminated by '\tab'
+Collection items terminated by '\001'
+Map keys terminated by '\002' 
+location '/usr/local/tab.db/tab1'
+
+内部表就是管理表，当删除内部表是同时会删除表中对应的数据
+
+创建外部表
+create external table if not exists stocks (exchange STRING,symbol STRING,ymd STRING,price_open FLOAT,price_high FLOAT,price_low FLOAT,price_close ,volume int,price_adj_close float)
+row format delimited 
+fields terminated by ',' location 'data/stock';
+
+stocks 为外部表 hive认为它并非拥有这份数据。所以删除表的时候并不会删除数据《不过描述表的元数据信息会被删除》
+
+设置hive的strict强制模式 防止用户不加where条件没有使用分区过滤 会产生一个巨大的MapReduce任务
+set hive.mapred.mode = strict //
+
+show partitiones table 查看该表的分区
+show partitions table partition (country='US')查询该表中指定的分区
+
+describe extended table //显示表中的每个字段已经对应的分区信息
+
+load data local inpath '/data/table.txt' into table tabs partitions (country='US',state='CA') //加载本地数据到指定的分区中
+
+ETL 数据抽取（Extract） 数据转换(Transform) 数据装载 (Load)
+
+hive 字符串解析函数
+
+create extended table if not exists message_log 
+(hms int,serverity string,server string,process_id int, message string) 
+partition by (year int,month int, day int)
+row format delimited
+fields terminated by '\t'
+
+alert table message_log add partition(year=2018,month=6,day=27) // 为指定的数据目录添加到表分区中
+location 'hdfs://master_server/data/message_log/2018/06/27'
+
+show extended table message_log partition (year=2018,month=6,day=27) 查看指定分区下的数据路径
+
+alert table .. add partition 只能用在外部表中
+
+自定义表的存储格式：
+create table employee(
+	name string,
+	salary float,
+	subordinates array<STRING>,
+	deductions Map<String,FLoat>
+)
+row format delimited
+fields terminated by '\001'
+collection items terminated by '\002'
+map keys terminated by '\003'
+stored as textfile/sequencefile/rcfile
+
+Textfile -->> 对应的java实现 org.apache.hadoop.mapred.TextFormatInput
+		-->>与之对应的java实现 org.apache.hadoop.hive.io.HiveIgnoreKeyTextOutputFormat
+SerDe -->>对应java的实现 org.apache.hadoop.hive.serde2.lazy.LazySimpleSerDe
+
+Drop table if exists employee; -->>默认存在数据库回收站的功能没有开启，如果删除内部表数据将会被移动到分布式文件系统中的用户目录下的.Trash目录下
+如果想开启，只需配置属性fs.trash.internal,这个值是"回收站检查点"间的时间间隔
+
+ALERT TABLE修改对应的元数据，并不会修改对应的数据
+
+alert table log_message rename to logmessage;
+
+增加分区
+alert table log_message add if not exists 
+partition(year=2018,month=6,day=21) location '/logs/2018/06/21'
+partition(year=2018,month=6,day=22) location '/logs/2018/06/22'
+
+修改分区所数据的路径
+
+alert table log_message partition(year=2018,month=1,day=12) location 'svn://logs/2018/02/21' 
+//移动位置来改变某个分区的位置 不会移走旧的数据和删除旧的数据
+
+alert table log_message drop if exists partition(year=2018,month=6,day=21) 
+
+增加列：
+alert table log_message add columns
+(app_name string comment '',
+session_id string
+)
+
+修改分区的存储格式
+
+alert table log_message partition(year=2018,month=6,day=21) set fileformat sequencefile -- 实际使用不多
+
+alert table tab_use_json_storage set serde 'com.json.JSONSerDe' -- 实际使用不多
+with serdeproperties('prop1'='value1','prop2'='value2')
+
+“钩子”的使用：
+alert table log_message touch partition(year=2018,month=6,day=23)
+
+将分区中的文件打包成hadoop的压缩包（HAR）
+alert table log_message archive partition(year=2018,month=6,day=23)
+仅仅只会减少系统中的文件数和namenode的压力，但是不会减少存储空间
+
+防止分区被删除和被查询
+alert table log_message partition(year=2018,month=6,day=23) enable no_drop;
+alert table log_message partition((year=2018,month=6,day=23)) enable offline
+
+
+装载数据到管理表：
+load local data inpath '/data/log/1.log' overwrite into table log_message partition(year=2018,month=12,day=1) 
+
+insert overwrite table employee partition(country='US',state='NewYork')
+select * from emp where country='US' and state='NewYork'
+
+一次导入多个分区：
+from emp
+insert overwrite table employee partition(country='US',state='or')
+select * where country='US' and state='or'
+insert overwrite table employee partition(country='US',state='CA')
+select * where country='US' and state='CA'
+...
+往动态分区中插入数据：
+使用动态分区必须满足：
+set hive.exec.dynamic.partition=true
+set hive.exec.dynamic.partition.mode=nostrict
+set hive.exec.max.dynamic.partitions.pernode=1000 //每个执行MR的node最大可以创建动态分区的数量1000
+set hive.exec.max.dynamic.partitions=10000  //在所有的MR的节点上，最多可以创建多少个分区
+
+insert overwrite table employee partition(contry,state) 
+select ..., e.country,e.state from emp e where ..
+
+
+
+
+
+
+
+
+
+
