@@ -126,8 +126,8 @@ select * where country='US' and state='CA'
 使用动态分区必须满足：
 set hive.exec.dynamic.partition=true
 set hive.exec.dynamic.partition.mode=nostrict
-set hive.exec.max.dynamic.partitions.pernode=1000 //每个执行MR的node最大可以创建动态分区的数量1000
-set hive.exec.max.dynamic.partitions=10000  //在所有的MR的节点上，最多可以创建多少个分区
+set hive.exec.max.dynamic.partitions.pernode=1000 //每个Mapper和Reducer可以创建最大动态分区的数量1000
+set hive.exec.max.dynamic.partitions=10000  // 一个动态分区可以创建的最大的分区个数
 
 insert overwrite table employee partition(contry,state) 
 select ..., e.country,e.state from emp e where ..
